@@ -1,0 +1,511 @@
+import React, { useState, useEffect, createContext, useContext } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, query, orderBy, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+
+// Context for Firebase services and user data
+const FirebaseContext = createContext(null);
+
+// Firebase Provider component
+const FirebaseProvider = ({ children }) => {
+    const [app, setApp] = useState(null);
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [loadingFirebase, setLoadingFirebase] = useState(true);
+
+    useEffect(() => {
+        try {
+            // Initialize Firebase app
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const firebaseApp = initializeApp(firebaseConfig);
+            setApp(firebaseApp);
+
+            // Get Firestore and Auth instances
+            const firestoreDb = getFirestore(firebaseApp);
+            setDb(firestoreDb);
+            const firebaseAuth = getAuth(firebaseApp);
+            setAuth(firebaseAuth);
+
+            // Sign in with custom token or anonymously
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+            if (initialAuthToken) {
+                signInWithCustomToken(firebaseAuth, initialAuthToken)
+                    .then(() => {
+                        console.log("Signed in with custom token.");
+                    })
+                    .catch((error) => {
+                        console.error("Error signing in with custom token:", error);
+                        signInAnonymously(firebaseAuth)
+                            .then(() => console.log("Signed in anonymously."))
+                            .catch((anonError) => console.error("Error signing in anonymously:", anonError));
+                    })
+                    .finally(() => setLoadingFirebase(false));
+            } else {
+                signInAnonymously(firebaseAuth)
+                    .then(() => console.log("Signed in anonymously."))
+                    .catch((error) => console.error("Error signing in anonymously:", error))
+                    .finally(() => setLoadingFirebase(false));
+            }
+
+            // Listen for auth state changes
+            const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+                if (user) {
+                    setUserId(user.uid);
+                } else {
+                    setUserId(crypto.randomUUID()); // Use a random ID if not authenticated
+                }
+                setLoadingFirebase(false);
+            });
+
+            return () => unsubscribe(); // Cleanup auth listener
+        } catch (error) {
+            console.error("Failed to initialize Firebase:", error);
+            setLoadingFirebase(false);
+        }
+    }, []);
+
+    return (
+        <FirebaseContext.Provider value={{ app, db, auth, userId, loadingFirebase }}>
+            {children}
+        </FirebaseContext.Provider>
+    );
+};
+
+// Custom hook to use Firebase services
+const useFirebase = () => useContext(FirebaseContext);
+
+// Main App Component
+const App = () => {
+    const { db, auth, userId, loadingFirebase } = useFirebase();
+    const [currentPage, setCurrentPage] = useState('landing'); // 'landing', 'profile', 'store', 'chat'
+    const [weapons, setWeapons] = useState([]);
+    const [selectedWeapon, setSelectedWeapon] = useState(null);
+    const [chatMessages, setChatMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [activeChatTicketId, setActiveChatTicketId] = useState(null); // ID of the current chat ticket
+    const [showModal, setShowModal] = useState(false);
+    const [modalContent, setModalContent] = useState('');
+    const [isAdmin, setIsAdmin] = useState(false); // State to check if current user is admin
+
+    // Replace with your actual admin UID (get this from Firebase console after logging in as admin)
+    const ADMIN_UID = 'YOUR_ADMIN_UID_HERE'; // <<< GANTI DENGAN UID ADMIN ANDA
+
+    useEffect(() => {
+        if (userId && userId === ADMIN_UID) {
+            setIsAdmin(true);
+        } else {
+            setIsAdmin(false);
+        }
+    }, [userId]);
+
+    // Fetch weapons data
+    useEffect(() => {
+        if (db && !loadingFirebase) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const weaponsColRef = collection(db, `artifacts/${appId}/public/data/weapons`);
+            const q = query(weaponsColRef);
+
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const weaponsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setWeapons(weaponsData);
+            }, (error) => {
+                console.error("Error fetching weapons:", error);
+                showInfoModal("Gagal memuat data senjata. Silakan coba lagi.");
+            });
+
+            return () => unsubscribe();
+        }
+    }, [db, loadingFirebase]);
+
+    // Fetch chat messages for active ticket
+    useEffect(() => {
+        if (db && activeChatTicketId && !loadingFirebase && userId) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const chatMessagesColRef = collection(db, `artifacts/${appId}/users/${userId}/transactions/${activeChatTicketId}/messages`);
+            const q = query(chatMessagesColRef, orderBy('timestamp'));
+
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setChatMessages(messages);
+            }, (error) => {
+                console.error("Error fetching chat messages:", error);
+                showInfoModal("Gagal memuat pesan chat. Silakan coba lagi.");
+            });
+
+            return () => unsubscribe();
+        }
+    }, [db, activeChatTicketId, loadingFirebase, userId]);
+
+    const showInfoModal = (message) => {
+        setModalContent(message);
+        setShowModal(true);
+    };
+
+    const handleBuyWeapon = async (weapon) => {
+        if (!db || !userId) {
+            showInfoModal("Firebase belum siap atau pengguna tidak terautentikasi.");
+            return;
+        }
+
+        try {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const userTransactionsColRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+
+            // Check if there's an existing open ticket for this user and weapon
+            const q = query(userTransactionsColRef);
+            const existingTicketsSnapshot = await getDocs(q);
+            let existingTicket = null;
+
+            existingTicketsSnapshot.forEach(doc => {
+                if (doc.data().weaponId === weapon.id && doc.data().status === 'open') {
+                    existingTicket = { id: doc.id, ...doc.data() };
+                }
+            });
+
+            if (existingTicket) {
+                setActiveChatTicketId(existingTicket.id);
+                showInfoModal(`Anda sudah memiliki tiket transaksi terbuka untuk ${weapon.name}. Melanjutkan chat yang sudah ada.`);
+            } else {
+                // Create a new transaction ticket
+                const newTicketRef = await addDoc(userTransactionsColRef, {
+                    weaponId: weapon.id,
+                    weaponName: weapon.name,
+                    buyerId: userId,
+                    status: 'open', // 'open', 'completed', 'cancelled'
+                    createdAt: new Date().toISOString(),
+                });
+                setActiveChatTicketId(newTicketRef.id);
+                showInfoModal(`Tiket transaksi baru untuk ${weapon.name} telah dibuat. Silakan mulai chat.`);
+            }
+
+            setSelectedWeapon(weapon);
+            setCurrentPage('chat');
+        } catch (error) {
+            console.error("Error creating/accessing transaction ticket:", error);
+            showInfoModal("Gagal memulai transaksi. Silakan coba lagi.");
+        }
+    };
+
+    const handleSendMessage = async () => {
+        if (!db || !userId || !activeChatTicketId || newMessage.trim() === '') {
+            showInfoModal("Pesan tidak boleh kosong atau chat belum siap.");
+            return;
+        }
+
+        try {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const messagesColRef = collection(db, `artifacts/${appId}/users/${userId}/transactions/${activeChatTicketId}/messages`);
+
+            await addDoc(messagesColRef, {
+                senderId: userId,
+                senderName: userId === ADMIN_UID ? 'Admin' : 'Pembeli', // Simple sender name
+                message: newMessage,
+                timestamp: Date.now(),
+            });
+            setNewMessage('');
+        } catch (error) {
+            console.error("Error sending message:", error);
+            showInfoModal("Gagal mengirim pesan. Silakan coba lagi.");
+        }
+    };
+
+    const handleCompleteTransaction = async () => {
+        if (!db || !userId || !activeChatTicketId || !isAdmin) {
+            showInfoModal("Anda tidak memiliki izin untuk menyelesaikan transaksi ini.");
+            return;
+        }
+
+        try {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, activeChatTicketId);
+
+            await updateDoc(transactionDocRef, {
+                status: 'completed',
+                completedAt: new Date().toISOString(),
+            });
+
+            showInfoModal("Transaksi berhasil diselesaikan!");
+            setActiveChatTicketId(null);
+            setChatMessages([]);
+            setCurrentPage('store'); // Go back to store after completion
+        } catch (error) {
+            console.error("Error completing transaction:", error);
+            showInfoModal("Gagal menyelesaikan transaksi. Silakan coba lagi.");
+        }
+    };
+
+    const handleUpdateStock = async (weaponId, newStock) => {
+        if (!db || !isAdmin) {
+            showInfoModal("Anda tidak memiliki izin untuk mengubah stok.");
+            return;
+        }
+        if (newStock < 0) {
+            showInfoModal("Stok tidak bisa kurang dari 0.");
+            return;
+        }
+
+        try {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const weaponDocRef = doc(db, `artifacts/${appId}/public/data/weapons`, weaponId);
+            await updateDoc(weaponDocRef, { stock: newStock });
+            showInfoModal("Stok berhasil diperbarui!");
+        } catch (error) {
+            console.error("Error updating stock:", error);
+            showInfoModal("Gagal memperbarui stok. Silakan coba lagi.");
+        }
+    };
+
+    const renderPage = () => {
+        if (loadingFirebase) {
+            return (
+                <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
+                    <div className="text-xl">Memuat Firebase...</div>
+                </div>
+            );
+        }
+
+        switch (currentPage) {
+            case 'landing':
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 to-gray-700 text-white p-4">
+                        <h1 className="text-5xl font-extrabold mb-6 text-yellow-400 drop-shadow-lg">
+                            Toko Senjata IC SAMP Definitive Roleplay
+                        </h1>
+                        <p className="text-xl text-gray-300 mb-8 text-center max-w-2xl">
+                            Selamat datang di toko senjata pribadi saya untuk Definitive Roleplay. Di sini Anda bisa menemukan berbagai senjata IC untuk kebutuhan Anda.
+                        </p>
+                        <div className="space-x-4">
+                            <button
+                                onClick={() => setCurrentPage('store')}
+                                className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-8 rounded-full shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-75"
+                            >
+                                Lihat Toko
+                            </button>
+                            <button
+                                onClick={() => setCurrentPage('profile')}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75"
+                            >
+                                Profil GTA Saya
+                            </button>
+                        </div>
+                    </div>
+                );
+            case 'profile':
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-700 text-white p-8 flex flex-col items-center">
+                        <h2 className="text-4xl font-extrabold mb-8 text-yellow-400">Profil GTA Saya</h2>
+                        <div className="bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full border border-gray-700">
+                            <p className="text-lg mb-4"><strong className="text-yellow-300">Nama Karakter:</strong> [Nama Karakter Anda]</p>
+                            <p className="text-lg mb-4"><strong className="text-yellow-300">Level:</strong> [Level Anda]</p>
+                            <p className="text-lg mb-4"><strong className="text-yellow-300">Organisasi/Faksi:</strong> [Organisasi/Faksi Anda]</p>
+                            <p className="text-lg mb-4"><strong className="text-yellow-300">UID Pengguna Web:</strong> {userId}</p>
+                            <p className="text-lg mb-4 text-gray-400 italic">
+                                Ini adalah profil IC pribadi saya. Informasi lebih lanjut akan ditambahkan di sini.
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => setCurrentPage('landing')}
+                            className="mt-8 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75"
+                        >
+                            Kembali ke Beranda
+                        </button>
+                    </div>
+                );
+            case 'store':
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-700 text-white p-8">
+                        <h2 className="text-4xl font-extrabold mb-8 text-yellow-400 text-center">Toko Senjata IC</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-5xl mx-auto">
+                            {weapons.length === 0 ? (
+                                <p className="col-span-full text-center text-gray-400">Tidak ada senjata yang tersedia saat ini.</p>
+                            ) : (
+                                weapons.map((weapon) => (
+                                    <div key={weapon.id} className="bg-gray-800 p-6 rounded-lg shadow-xl border border-gray-700 flex flex-col">
+                                        <h3 className="text-2xl font-bold text-yellow-300 mb-2">{weapon.name}</h3>
+                                        <p className="text-gray-300 mb-4 flex-grow">{weapon.description}</p>
+                                        <p className="text-xl font-semibold text-green-400 mb-4">Harga: ${weapon.priceIC} IC</p>
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-lg">Stok: <span className="font-bold">{weapon.stock}</span></p>
+                                            {isAdmin && (
+                                                <div className="flex items-center space-x-2">
+                                                    <button
+                                                        onClick={() => handleUpdateStock(weapon.id, weapon.stock - 1)}
+                                                        disabled={weapon.stock <= 0}
+                                                        className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-full text-sm disabled:opacity-50"
+                                                    >
+                                                        -
+                                                    </button>
+                                                    <input
+                                                        type="number"
+                                                        value={weapon.stock}
+                                                        onChange={(e) => handleUpdateStock(weapon.id, parseInt(e.target.value))}
+                                                        className="w-16 bg-gray-700 text-white rounded-md text-center"
+                                                        min="0"
+                                                    />
+                                                    <button
+                                                        onClick={() => handleUpdateStock(weapon.id, weapon.stock + 1)}
+                                                        className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-full text-sm"
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <button
+                                            onClick={() => handleBuyWeapon(weapon)}
+                                            disabled={weapon.stock <= 0}
+                                            className="mt-6 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 hover:scale-105 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-75"
+                                        >
+                                            Beli Sekarang
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <button
+                            onClick={() => setCurrentPage('landing')}
+                            className="mt-12 mx-auto block bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75"
+                        >
+                            Kembali ke Beranda
+                        </button>
+                    </div>
+                );
+            case 'chat':
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-700 text-white p-8 flex flex-col">
+                        <h2 className="text-4xl font-extrabold mb-6 text-yellow-400 text-center">Chat Transaksi</h2>
+                        {selectedWeapon && (
+                            <p className="text-xl text-gray-300 mb-4 text-center">Transaksi untuk: <span className="font-bold text-yellow-300">{selectedWeapon.name}</span></p>
+                        )}
+                        <div className="flex-grow bg-gray-800 p-6 rounded-lg shadow-xl border border-gray-700 flex flex-col overflow-hidden">
+                            <div className="flex-grow overflow-y-auto mb-4 p-2 custom-scrollbar">
+                                {chatMessages.length === 0 ? (
+                                    <p className="text-gray-400 text-center">Mulai chat untuk transaksi Anda.</p>
+                                ) : (
+                                    chatMessages.map((msg) => (
+                                        <div
+                                            key={msg.id}
+                                            className={`mb-3 p-3 rounded-lg max-w-[70%] ${msg.senderId === userId ? 'bg-blue-700 ml-auto' : 'bg-gray-700 mr-auto'}`}
+                                        >
+                                            <p className="font-bold text-sm text-gray-300">{msg.senderName}</p>
+                                            <p className="text-lg">{msg.message}</p>
+                                            <p className="text-xs text-right text-gray-400 mt-1">
+                                                {new Date(msg.timestamp).toLocaleString()}
+                                            </p>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                            <div className="flex mt-4">
+                                <input
+                                    type="text"
+                                    value={newMessage}
+                                    onChange={(e) => setNewMessage(e.target.value)}
+                                    placeholder="Ketik pesan Anda..."
+                                    className="flex-grow p-3 rounded-l-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                                <button
+                                    onClick={handleSendMessage}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-r-lg shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75"
+                                >
+                                    Kirim
+                                </button>
+                            </div>
+                            {isAdmin && (
+                                <button
+                                    onClick={handleCompleteTransaction}
+                                    className="mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75"
+                                >
+                                    Selesaikan Transaksi
+                                </button>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => {
+                                setCurrentPage('store');
+                                setActiveChatTicketId(null); // Clear active ticket when leaving chat
+                                setNewMessage('');
+                            }}
+                            className="mt-8 mx-auto block bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75"
+                        >
+                            Kembali ke Toko
+                        </button>
+                    </div>
+                );
+            default:
+                return null;
+        }
+    };
+
+    return (
+        <div className="font-inter antialiased">
+            {renderPage()}
+
+            {/* Footer */}
+            <footer className="bg-gray-900 text-gray-400 py-6 text-center">
+                <p>&copy; 2025 Toko Senjata IC SAMP. Hak Cipta Dilindungi.</p>
+                <div className="mt-2">
+                    <a
+                        href="https://discord.gg/your-discord-link" // GANTI DENGAN LINK DISCORD SERVER ANDA
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 transition duration-300"
+                    >
+                        Gabung Discord Definitive Roleplay
+                    </a>
+                </div>
+            </footer>
+
+            {/* Modal for Info Messages */}
+            {showModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+                    <div className="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-sm w-full text-center">
+                        <p className="text-white text-lg mb-6">{modalContent}</p>
+                        <button
+                            onClick={() => setShowModal(false)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75"
+                        >
+                            Oke
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Global Styles */}
+            <style jsx global>{`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+                body {
+                    font-family: 'Inter', sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 8px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: #333;
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: #555;
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: #777;
+                }
+            `}</style>
+        </div>
+    );
+};
+
+// Wrapper to provide Firebase context
+const RootApp = () => (
+    <FirebaseProvider>
+        <App />
+    </FirebaseProvider>
+);
+
+export default RootApp;
