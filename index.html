@@ -34,10 +34,10 @@
 </head>
 <body class="bg-gradient-to-br from-gray-900 to-gray-700 min-h-screen flex flex-col">
     <main id="app-container" class="flex-grow">
-        <!-- Content will be rendered here by JavaScript -->
+        <!-- Konten akan dirender di sini oleh JavaScript -->
     </main>
 
-    <!-- Footer Section -->
+    <!-- Bagian Footer -->
     <footer class="bg-gray-900 text-gray-400 py-6 text-center">
         <p>&copy; 2025 Toko Senjata IC SAMP. Hak Cipta Dilindungi.</p>
         <div class="mt-2">
@@ -52,7 +52,7 @@
         </div>
     </footer>
 
-    <!-- Modal for Info Messages -->
+    <!-- Modal untuk Pesan Informasi -->
     <div id="info-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-sm w-full text-center">
             <p id="modal-content" class="text-white text-lg mb-6"></p>
@@ -68,20 +68,19 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, query, orderBy, addDoc, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global variables for Firebase instances and user data
+        // Variabel global untuk instance Firebase dan data pengguna
         let app;
         let db;
         let auth;
         let userId = null;
         let isAdmin = false;
-        let isGeneratingDescription = false; // State for LLM loading
+        let isGeneratingDescription = false; // Status untuk loading LLM
 
-        // Replace with your actual admin UID.
-        // You can get this from Firebase Console -> Authentication -> Users after logging in as admin.
-        const ADMIN_UID = '1eaKUy41VMQJJqVNtknHvTNYMQr2'; // <<< GANTI DENGAN UID ADMIN ANDA YANG SEBENARNYA
+        // UID Admin Anda yang sudah dimasukkan
+        const ADMIN_UID = '1eaKUy41VMQJJqVNtknHvTNYMQr2';
 
-        // Firebase Configuration (for deployment outside Canvas environment)
-        // If running in Canvas, __firebase_config and __initial_auth_token are provided globally.
+        // Konfigurasi Firebase (untuk deployment di luar lingkungan Canvas)
+        // Jika berjalan di Canvas, __firebase_config dan __initial_auth_token disediakan secara global.
         const firebaseConfig = typeof __firebase_config !== 'undefined'
             ? JSON.parse(__firebase_config)
             : {
@@ -94,7 +93,7 @@
                 measurementId: "G-JFN5SET77S"
             };
 
-        // Initialize Firebase
+        // Inisialisasi Firebase
         function initializeFirebase() {
             try {
                 app = initializeApp(firebaseConfig);
@@ -124,11 +123,11 @@
                     if (user) {
                         userId = user.uid;
                     } else {
-                        userId = crypto.randomUUID(); // Use a random ID if not authenticated
+                        userId = crypto.randomUUID(); // Gunakan ID acak jika tidak terautentikasi
                     }
                     isAdmin = (userId === ADMIN_UID);
                     console.log("Firebase initialized. User ID:", userId, "Is Admin:", isAdmin);
-                    // After auth state is ready, fetch data and render page
+                    // Setelah status auth siap, ambil data dan render halaman
                     fetchWeapons();
                     renderPage('landing');
                 });
@@ -139,7 +138,7 @@
             }
         }
 
-        // --- UI Rendering Functions ---
+        // --- Fungsi Rendering UI ---
         const appContainer = document.getElementById('app-container');
         const infoModal = document.getElementById('info-modal');
         const modalContent = document.getElementById('modal-content');
@@ -160,7 +159,7 @@
         let activeChatTicketId = null;
 
         function renderPage(pageName) {
-            appContainer.innerHTML = ''; // Clear current content
+            appContainer.innerHTML = ''; // Hapus konten saat ini
             let pageContent = '';
 
             switch (pageName) {
@@ -215,7 +214,7 @@
                         <div class="min-h-screen bg-gradient-to-br from-gray-900 to-gray-700 text-white p-8">
                             <h2 class="text-4xl font-extrabold mb-8 text-yellow-400 text-center">Toko Senjata IC</h2>
                             <div id="weapons-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-5xl mx-auto">
-                                <!-- Weapons will be loaded here -->
+                                <!-- Senjata akan dimuat di sini -->
                             </div>
                             <button id="back-to-landing-btn" class="mt-12 mx-auto block bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75">
                                 Kembali ke Beranda
@@ -224,7 +223,7 @@
                     `;
                     appContainer.innerHTML = pageContent;
                     document.getElementById('back-to-landing-btn').addEventListener('click', () => renderPage('landing'));
-                    renderWeapons(); // Call function to render weapons after page structure is in place
+                    renderWeapons(); // Panggil fungsi untuk merender senjata setelah struktur halaman ada
                     break;
 
                 case 'chat':
@@ -234,7 +233,7 @@
                             <p class="text-xl text-gray-300 mb-4 text-center">Transaksi untuk: <span class="font-bold text-yellow-300">${selectedWeapon ? selectedWeapon.name : 'N/A'}</span></p>
                             <div class="flex-grow bg-gray-800 p-6 rounded-lg shadow-xl border border-gray-700 flex flex-col overflow-hidden">
                                 <div id="chat-messages" class="flex-grow overflow-y-auto mb-4 p-2 custom-scrollbar">
-                                    <!-- Chat messages will be loaded here -->
+                                    <!-- Pesan chat akan dimuat di sini -->
                                 </div>
                                 <div class="flex mt-4">
                                     <input type="text" id="new-message-input" placeholder="Ketik pesan Anda..." class="flex-grow p-3 rounded-l-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -263,14 +262,14 @@
                     if (isAdmin) {
                         document.getElementById('complete-transaction-btn').addEventListener('click', handleCompleteTransaction);
                     }
-                    fetchChatMessages(); // Fetch messages for the active chat
+                    fetchChatMessages(); // Ambil pesan untuk chat aktif
                     break;
             }
         }
 
         function renderWeapons() {
             const weaponsGrid = document.getElementById('weapons-grid');
-            weaponsGrid.innerHTML = ''; // Clear existing weapons
+            weaponsGrid.innerHTML = ''; // Hapus senjata yang ada
 
             if (weapons.length === 0) {
                 weaponsGrid.innerHTML = '<p class="col-span-full text-center text-gray-400">Tidak ada senjata yang tersedia saat ini.</p>';
@@ -306,7 +305,7 @@
                 weaponsGrid.appendChild(weaponCard);
             });
 
-            // Add event listeners for dynamically created buttons
+            // Tambahkan event listener untuk tombol yang dibuat secara dinamis
             weaponsGrid.querySelectorAll('[data-action="buy-weapon"]').forEach(button => {
                 button.addEventListener('click', (e) => {
                     const weaponId = e.target.dataset.weaponId;
@@ -351,9 +350,9 @@
 
         function renderChatMessages() {
             const chatMessagesContainer = document.getElementById('chat-messages');
-            if (!chatMessagesContainer) return; // Exit if chat container not found
+            if (!chatMessagesContainer) return; // Keluar jika kontainer chat tidak ditemukan
 
-            chatMessagesContainer.innerHTML = ''; // Clear existing messages
+            chatMessagesContainer.innerHTML = ''; // Hapus pesan yang ada
 
             if (chatMessages.length === 0) {
                 chatMessagesContainer.innerHTML = '<p class="text-gray-400 text-center">Mulai chat untuk transaksi Anda.</p>';
@@ -372,11 +371,11 @@
                 `;
                 chatMessagesContainer.appendChild(messageDiv);
             });
-            // Scroll to the bottom of the chat
+            // Gulir ke bagian bawah chat
             chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
         }
 
-        // --- Firebase Data Handling Functions ---
+        // --- Fungsi Penanganan Data Firebase ---
         function fetchWeapons() {
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const weaponsColRef = collection(db, `artifacts/${appId}/public/data/weapons`);
@@ -384,7 +383,7 @@
 
             onSnapshot(q, (snapshot) => {
                 weapons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (document.getElementById('weapons-grid')) { // Only re-render if on store page
+                if (document.getElementById('weapons-grid')) { // Hanya render ulang jika di halaman toko
                     renderWeapons();
                 }
             }, (error) => {
@@ -402,7 +401,7 @@
 
             onSnapshot(q, (snapshot) => {
                 chatMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (document.getElementById('chat-messages')) { // Only re-render if on chat page
+                if (document.getElementById('chat-messages')) { // Hanya render ulang jika di halaman chat
                     renderChatMessages();
                 }
             }, (error) => {
@@ -473,7 +472,7 @@
                     message: messageText,
                     timestamp: Date.now(),
                 });
-                if (newMessageInput) newMessageInput.value = ''; // Clear input
+                if (newMessageInput) newMessageInput.value = ''; // Hapus input
             } catch (error) {
                 console.error("Error sending message:", error);
                 showInfoModal("Gagal mengirim pesan. Silakan coba lagi.");
@@ -533,7 +532,7 @@
             }
 
             isGeneratingDescription = true;
-            // Re-render weapons to show loading state on the button
+            // Render ulang senjata untuk menampilkan status loading pada tombol
             if (document.getElementById('weapons-grid')) {
                 renderWeapons();
             }
@@ -545,7 +544,7 @@
                 chatHistory.push({ role: "user", parts: [{ text: prompt }] });
 
                 const payload = { contents: chatHistory };
-                const apiKey = ""; // Canvas will provide this
+                const apiKey = ""; // Canvas akan menyediakan ini
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
                 const response = await fetch(apiUrl, {
@@ -574,14 +573,14 @@
                 showInfoModal("Terjadi kesalahan saat menghasilkan deskripsi. Silakan coba lagi.");
             } finally {
                 isGeneratingDescription = false;
-                // Re-render weapons to remove loading state
+                // Render ulang senjata untuk menghapus status loading
                 if (document.getElementById('weapons-grid')) {
                     renderWeapons();
                 }
             }
         }
 
-        // Initialize Firebase and render the landing page when the window loads
+        // Inisialisasi Firebase dan render halaman landing saat window dimuat
         window.onload = initializeFirebase;
     </script>
 </body>
