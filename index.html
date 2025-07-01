@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts - Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-    <style>
+    <style>JT
         body {
             font-family: 'Inter', sans-serif;
             margin: 0;
@@ -51,6 +51,14 @@
                 Gabung Discord Definitive Roleplay
             </a>
         </div>
+        <div class="mt-4">
+            <button id="admin-login-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75">
+                Admin Login
+            </button>
+            <button id="admin-logout-btn" class="bg-red-700 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75 hidden">
+                Admin Logout
+            </button>
+        </div>
     </footer>
 
     <!-- Modal untuk Pesan Informasi -->
@@ -63,10 +71,25 @@
         </div>
     </div>
 
+    <!-- Modal untuk Login Admin -->
+    <div id="admin-login-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-md w-full text-center">
+            <h3 class="text-2xl font-bold text-yellow-300 mb-6">Login Admin</h3>
+            <input type="email" id="admin-email" placeholder="Email Admin" class="w-full p-3 mb-4 rounded-md bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input type="password" id="admin-password" placeholder="Password Admin" class="w-full p-3 mb-6 rounded-md bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button id="perform-admin-login-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
+                Login
+            </button>
+            <button id="close-admin-login-modal-btn" class="ml-4 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75">
+                Batal
+            </button>
+        </div>
+    </div>
+
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, query, orderBy, addDoc, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Variabel global untuk instance Firebase dan data pengguna
@@ -77,8 +100,8 @@
         let isAdmin = false;
         let isGeneratingDescription = false; // Status untuk loading LLM
 
-        // UID Admin Anda
-        const ADMIN_UID = '1eaKUy41VMQJJqVNtknHvTNYMQr2';
+        // UID Admin Anda (GANTI DENGAN UID AKUN EMAIL/PASSWORD ADMIN YANG ANDA BUAT DI FIREBASE)
+        const ADMIN_UID = 'YOUR_ADMIN_UID_HERE'; // <<< GANTI DENGAN UID ADMIN ANDA YANG SEBENARNYA
 
         // Konfigurasi Firebase Anda
         const firebaseConfig = {
@@ -114,19 +137,23 @@
                                 .catch((anonError) => console.error("Error signing in anonymously:", anonError));
                         });
                 } else {
+                    // Coba sign in secara anonim jika tidak ada token kustom
                     signInAnonymously(auth)
                         .then(() => console.log("Signed in anonymously."))
                         .catch((error) => console.error("Error signing in anonymously:", error));
                 }
 
+                // Listener untuk perubahan status autentikasi
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
                     } else {
-                        userId = crypto.randomUUID(); // Gunakan ID acak jika tidak terautentikasi
+                        // Jika tidak ada user yang login, gunakan ID acak untuk user anonim
+                        userId = crypto.randomUUID();
                     }
                     isAdmin = (userId === ADMIN_UID);
                     console.log("Firebase initialized. User ID:", userId, "Is Admin:", isAdmin);
+                    updateAdminButtonsVisibility(); // Perbarui visibilitas tombol admin
                     // Setelah status auth siap, ambil data dan render halaman
                     fetchWeapons();
                     renderPage('landing');
@@ -138,11 +165,19 @@
             }
         }
 
-        // --- Fungsi Rendering UI ---
+        // --- Fungsi UI Umum ---
         const appContainer = document.getElementById('app-container');
         const infoModal = document.getElementById('info-modal');
         const modalContent = document.getElementById('modal-content');
         const modalOkButton = document.getElementById('modal-ok-button');
+        const adminLoginModal = document.getElementById('admin-login-modal');
+        const adminLoginBtn = document.getElementById('admin-login-btn');
+        const adminLogoutBtn = document.getElementById('admin-logout-btn');
+        const performAdminLoginBtn = document.getElementById('perform-admin-login-btn');
+        const closeAdminLoginModalBtn = document.getElementById('close-admin-login-modal-btn');
+        const adminEmailInput = document.getElementById('admin-email');
+        const adminPasswordInput = document.getElementById('admin-password');
+
 
         modalOkButton.addEventListener('click', () => {
             infoModal.classList.add('hidden');
@@ -153,11 +188,74 @@
             infoModal.classList.remove('hidden');
         }
 
+        // --- Admin Login/Logout Logic ---
+        adminLoginBtn.addEventListener('click', () => {
+            adminLoginModal.classList.remove('hidden');
+        });
+
+        closeAdminLoginModalBtn.addEventListener('click', () => {
+            adminLoginModal.classList.add('hidden');
+            adminEmailInput.value = '';
+            adminPasswordInput.value = '';
+        });
+
+        performAdminLoginBtn.addEventListener('click', async () => {
+            const email = adminEmailInput.value;
+            const password = adminPasswordInput.value;
+
+            if (!email || !password) {
+                showInfoModal("Email dan password tidak boleh kosong.");
+                return;
+            }
+
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                if (userCredential.user.uid === ADMIN_UID) {
+                    showInfoModal("Login admin berhasil!");
+                    adminLoginModal.classList.add('hidden');
+                    adminEmailInput.value = '';
+                    adminPasswordInput.value = '';
+                    // onAuthStateChanged akan memicu pembaruan userId dan isAdmin
+                } else {
+                    // Jika login berhasil tapi UID bukan admin yang terdaftar
+                    await signOut(auth); // Langsung logout
+                    showInfoModal("Akses ditolak. Ini bukan akun admin yang terdaftar.");
+                }
+            } catch (error) {
+                console.error("Error during admin login:", error);
+                showInfoModal(`Login gagal: ${error.message}`);
+            }
+        });
+
+        adminLogoutBtn.addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+                showInfoModal("Logout admin berhasil!");
+                // onAuthStateChanged akan memicu pembaruan userId dan isAdmin
+                renderPage('landing'); // Kembali ke halaman landing setelah logout
+            } catch (error) {
+                console.error("Error during admin logout:", error);
+                showInfoModal(`Logout gagal: ${error.message}`);
+            }
+        });
+
+        function updateAdminButtonsVisibility() {
+            if (isAdmin) {
+                adminLoginBtn.classList.add('hidden');
+                adminLogoutBtn.classList.remove('hidden');
+            } else {
+                adminLoginBtn.classList.remove('hidden');
+                adminLogoutBtn.classList.add('hidden');
+            }
+        }
+
+        // --- Variabel State Aplikasi ---
         let weapons = [];
         let selectedWeapon = null;
         let chatMessages = [];
         let activeChatTicketId = null;
 
+        // --- Fungsi Rendering Halaman ---
         function renderPage(pageName) {
             appContainer.innerHTML = ''; // Hapus konten saat ini
             let pageContent = '';
