@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Toko Senjata IC SAMP Definitive Roleplay</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts - Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
         body {
@@ -34,14 +32,11 @@
 </head>
 <body class="bg-gradient-to-br from-gray-900 to-gray-700 min-h-screen flex flex-col">
     <main id="app-container" class="flex-grow">
-        <!-- Konten akan dirender di sini oleh JavaScript -->
-    </main>
+        </main>
 
-    <!-- Bagian Footer -->
     <footer class="bg-gray-900 text-gray-400 py-6 text-center w-full">
         <p class="mb-2">&copy; 2025 Toko Senjata IC SAMP. Hak Cipta Dilindungi.</p>
         <div class="mt-2">
-            <!-- PENTING: GANTI LINK DISCORD INI DENGAN LINK SERVER DISCORD ANDA YANG SEBENARNYA -->
             <a
                 href="https://discord.gg/your-discord-link"
                 target="_blank"
@@ -61,7 +56,6 @@
         </div>
     </footer>
 
-    <!-- Modal untuk Pesan Informasi -->
     <div id="info-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-sm w-full text-center">
             <p id="modal-content" class="text-white text-lg mb-6"></p>
@@ -71,7 +65,6 @@
         </div>
     </div>
 
-    <!-- Modal untuk Login Admin -->
     <div id="admin-login-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-md w-full text-center">
             <h3 class="text-2xl font-bold text-yellow-300 mb-6">Login Admin</h3>
@@ -86,7 +79,23 @@
         </div>
     </div>
 
-    <!-- Firebase SDKs -->
+    <div id="add-weapon-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-md w-full text-center">
+            <h3 class="text-2xl font-bold text-yellow-300 mb-6">Tambah Senjata Baru</h3>
+            <input type="text" id="new-weapon-name" placeholder="Nama Senjata" class="w-full p-3 mb-4 rounded-md bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <textarea id="new-weapon-description" placeholder="Deskripsi Senjata" class="w-full p-3 mb-4 rounded-md bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 h-24"></textarea>
+            <input type="number" id="new-weapon-price" placeholder="Harga IC" class="w-full p-3 mb-4 rounded-md bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" min="0" />
+            <input type="number" id="new-weapon-stock" placeholder="Stok" class="w-full p-3 mb-6 rounded-md bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" min="0" />
+            <button id="perform-add-weapon-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75">
+                Tambah Senjata
+            </button>
+            <button id="close-add-weapon-modal-btn" class="ml-4 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75">
+                Batal
+            </button>
+        </div>
+    </div>
+
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -101,7 +110,7 @@
         let isGeneratingDescription = false; // Status untuk loading LLM
 
         // UID Admin Anda (GANTI DENGAN UID AKUN EMAIL/PASSWORD ADMIN YANG ANDA BUAT DI FIREBASE)
-        const ADMIN_UID = 'Y8PfnW65zGbTdSn0UBDBc825pMu2'; // <<< UID ADMIN ANDA YANG BARU
+        const ADMIN_UID = 'Y8PfnW65zGbTdSn0UBDBc825pMu2'; // <<< UID ADMIN ANDA
 
         // Konfigurasi Firebase Anda
         const firebaseConfig = {
@@ -122,7 +131,6 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // initialAuthToken hanya ada di lingkungan Canvas, jadi di luar itu akan null
                 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
                 if (initialAuthToken) {
@@ -137,24 +145,20 @@
                                 .catch((anonError) => console.error("Error signing in anonymously:", anonError));
                         });
                 } else {
-                    // Coba sign in secara anonim jika tidak ada token kustom
                     signInAnonymously(auth)
                         .then(() => console.log("Signed in anonymously."))
                         .catch((error) => console.error("Error signing in anonymously:", error));
                 }
 
-                // Listener untuk perubahan status autentikasi
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
                     } else {
-                        // Jika tidak ada user yang login, gunakan ID acak untuk user anonim
                         userId = crypto.randomUUID();
                     }
                     isAdmin = (userId === ADMIN_UID);
                     console.log("Firebase initialized. User ID:", userId, "Is Admin:", isAdmin);
-                    updateAdminButtonsVisibility(); // Perbarui visibilitas tombol admin
-                    // Setelah status auth siap, ambil data dan render halaman
+                    updateAdminButtonsVisibility();
                     fetchWeapons();
                     renderPage('landing');
                 });
@@ -177,6 +181,15 @@
         const closeAdminLoginModalBtn = document.getElementById('close-admin-login-modal-btn');
         const adminEmailInput = document.getElementById('admin-email');
         const adminPasswordInput = document.getElementById('admin-password');
+
+        // Elemen-elemen baru untuk modal tambah senjata
+        const addWeaponModal = document.getElementById('add-weapon-modal');
+        const newWeaponNameInput = document.getElementById('new-weapon-name');
+        const newWeaponDescriptionInput = document.getElementById('new-weapon-description');
+        const newWeaponPriceInput = document.getElementById('new-weapon-price');
+        const newWeaponStockInput = document.getElementById('new-weapon-stock');
+        const performAddWeaponBtn = document.getElementById('perform-add-weapon-btn');
+        const closeAddWeaponModalBtn = document.getElementById('close-add-weapon-modal-btn');
 
 
         modalOkButton.addEventListener('click', () => {
@@ -215,10 +228,8 @@
                     adminLoginModal.classList.add('hidden');
                     adminEmailInput.value = '';
                     adminPasswordInput.value = '';
-                    // onAuthStateChanged akan memicu pembaruan userId dan isAdmin
                 } else {
-                    // Jika login berhasil tapi UID bukan admin yang terdaftar
-                    await signOut(auth); // Langsung logout
+                    await signOut(auth);
                     showInfoModal("Akses ditolak. Ini bukan akun admin yang terdaftar.");
                 }
             } catch (error) {
@@ -231,8 +242,7 @@
             try {
                 await signOut(auth);
                 showInfoModal("Logout admin berhasil!");
-                // onAuthStateChanged akan memicu pembaruan userId dan isAdmin
-                renderPage('landing'); // Kembali ke halaman landing setelah logout
+                renderPage('landing');
             } catch (error) {
                 console.error("Error during admin logout:", error);
                 showInfoModal(`Logout gagal: ${error.message}`);
@@ -311,9 +321,15 @@
                     pageContent = `
                         <div class="min-h-screen bg-gradient-to-br from-gray-900 to-gray-700 text-white p-8">
                             <h2 class="text-4xl font-extrabold mb-8 text-yellow-400 text-center">Toko Senjata IC</h2>
+                            ${isAdmin ? `
+                                <div class="text-center mb-8">
+                                    <button id="add-new-weapon-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
+                                        + Tambah Senjata Baru
+                                    </button>
+                                </div>
+                            ` : ''}
                             <div id="weapons-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-5xl mx-auto">
-                                <!-- Senjata akan dimuat di sini -->
-                            </div>
+                                </div>
                             <button id="back-to-landing-btn" class="mt-12 mx-auto block bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75">
                                 Kembali ke Beranda
                             </button>
@@ -321,6 +337,9 @@
                     `;
                     appContainer.innerHTML = pageContent;
                     document.getElementById('back-to-landing-btn').addEventListener('click', () => renderPage('landing'));
+                    if (isAdmin) {
+                        document.getElementById('add-new-weapon-btn').addEventListener('click', () => addWeaponModal.classList.remove('hidden'));
+                    }
                     renderWeapons(); // Panggil fungsi untuk merender senjata setelah struktur halaman ada
                     break;
 
@@ -331,8 +350,7 @@
                             <p class="text-xl text-gray-300 mb-4 text-center">Transaksi untuk: <span class="font-bold text-yellow-300">${selectedWeapon ? selectedWeapon.name : 'N/A'}</span></p>
                             <div class="flex-grow bg-gray-800 p-6 rounded-lg shadow-xl border border-gray-700 flex flex-col overflow-hidden">
                                 <div id="chat-messages" class="flex-grow overflow-y-auto mb-4 p-2 custom-scrollbar">
-                                    <!-- Pesan chat akan dimuat di sini -->
-                                </div>
+                                    </div>
                                 <div class="flex mt-4">
                                     <input type="text" id="new-message-input" placeholder="Ketik pesan Anda..." class="flex-grow p-3 rounded-l-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                                     <button id="send-message-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-r-lg shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
@@ -623,6 +641,48 @@
             }
         }
 
+        async function handleAddWeapon() {
+            if (!db || !isAdmin) {
+                showInfoModal("Anda tidak memiliki izin untuk menambahkan senjata.");
+                return;
+            }
+
+            const name = newWeaponNameInput.value.trim();
+            const description = newWeaponDescriptionInput.value.trim();
+            const priceIC = parseInt(newWeaponPriceInput.value);
+            const stock = parseInt(newWeaponStockInput.value);
+
+            if (!name || isNaN(priceIC) || isNaN(stock) || priceIC < 0 || stock < 0) {
+                showInfoModal("Mohon isi semua field dengan benar (harga dan stok harus angka positif).");
+                return;
+            }
+
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const weaponsColRef = collection(db, `artifacts/${appId}/public/data/weapons`);
+
+                await addDoc(weaponsColRef, {
+                    name: name,
+                    description: description,
+                    priceIC: priceIC,
+                    stock: stock,
+                    createdAt: Date.now() // Tambahkan timestamp
+                });
+
+                showInfoModal("Senjata baru berhasil ditambahkan!");
+                addWeaponModal.classList.add('hidden'); // Sembunyikan modal
+                // Bersihkan form
+                newWeaponNameInput.value = '';
+                newWeaponDescriptionInput.value = '';
+                newWeaponPriceInput.value = '';
+                newWeaponStockInput.value = '';
+                renderPage('store'); // Render ulang halaman toko untuk melihat senjata baru
+            } catch (error) {
+                console.error("Error adding new weapon:", error);
+                showInfoModal(`Gagal menambahkan senjata: ${error.message}. Pastikan koleksi 'weapons' sudah ada di Firestore.`);
+            }
+        }
+
         async function handleGenerateWeaponDescription(weaponId, weaponName) {
             if (!db || !isAdmin) {
                 showInfoModal("Anda tidak memiliki izin untuk menghasilkan deskripsi.");
@@ -630,7 +690,6 @@
             }
 
             isGeneratingDescription = true;
-            // Render ulang senjata untuk menampilkan status loading pada tombol
             if (document.getElementById('weapons-grid')) {
                 renderWeapons();
             }
@@ -671,12 +730,22 @@
                 showInfoModal("Terjadi kesalahan saat menghasilkan deskripsi. Silakan coba lagi.");
             } finally {
                 isGeneratingDescription = false;
-                // Render ulang senjata untuk menghapus status loading
                 if (document.getElementById('weapons-grid')) {
                     renderWeapons();
                 }
             }
         }
+
+        // Event Listeners untuk modal tambah senjata baru
+        performAddWeaponBtn.addEventListener('click', handleAddWeapon);
+        closeAddWeaponModalBtn.addEventListener('click', () => {
+            addWeaponModal.classList.add('hidden');
+            // Bersihkan form
+            newWeaponNameInput.value = '';
+            newWeaponDescriptionInput.value = '';
+            newWeaponPriceInput.value = '';
+            newWeaponStockInput.value = '';
+        });
 
         // Inisialisasi Firebase dan render halaman landing saat window dimuat
         window.onload = initializeFirebase;
