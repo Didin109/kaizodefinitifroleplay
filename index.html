@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Toko Senjata IC SAMP Definitive Roleplay</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
         body {
@@ -32,11 +34,14 @@
 </head>
 <body class="bg-gradient-to-br from-gray-900 to-gray-700 min-h-screen flex flex-col">
     <main id="app-container" class="flex-grow">
-        </main>
+        <!-- Konten akan dirender di sini oleh JavaScript -->
+    </main>
 
+    <!-- Bagian Footer -->
     <footer class="bg-gray-900 text-gray-400 py-6 text-center w-full">
         <p class="mb-2">&copy; 2025 Toko Senjata IC SAMP. Hak Cipta Dilindungi.</p>
         <div class="mt-2">
+            <!-- PENTING: GANTI LINK DISCORD INI DENGAN LINK SERVER DISCORD ANDA YANG SEBENARNYA -->
             <a
                 href="https://discord.gg/your-discord-link"
                 target="_blank"
@@ -56,6 +61,7 @@
         </div>
     </footer>
 
+    <!-- Modal untuk Pesan Informasi -->
     <div id="info-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-sm w-full text-center">
             <p id="modal-content" class="text-white text-lg mb-6"></p>
@@ -65,6 +71,7 @@
         </div>
     </div>
 
+    <!-- Modal untuk Login Admin -->
     <div id="admin-login-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-md w-full text-center">
             <h3 class="text-2xl font-bold text-yellow-300 mb-6">Login Admin</h3>
@@ -79,6 +86,7 @@
         </div>
     </div>
 
+    <!-- Modal untuk Tambah Senjata Baru (New Admin Feature) -->
     <div id="add-weapon-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-md w-full text-center">
             <h3 class="text-2xl font-bold text-yellow-300 mb-6">Tambah Senjata Baru</h3>
@@ -96,6 +104,7 @@
     </div>
 
 
+    <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -264,6 +273,8 @@
         let selectedWeapon = null;
         let chatMessages = [];
         let activeChatTicketId = null;
+        let activeChatBuyerId = null; // New: To store the buyer's UID for admin chat view
+        let adminChatTickets = []; // New: To store all incoming chat tickets for admin
 
         // --- Fungsi Rendering Halaman ---
         function renderPage(pageName) {
@@ -322,14 +333,18 @@
                         <div class="min-h-screen bg-gradient-to-br from-gray-900 to-gray-700 text-white p-8">
                             <h2 class="text-4xl font-extrabold mb-8 text-yellow-400 text-center">Toko Senjata IC</h2>
                             ${isAdmin ? `
-                                <div class="text-center mb-8">
+                                <div class="text-center mb-8 space-x-4">
                                     <button id="add-new-weapon-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
                                         + Tambah Senjata Baru
+                                    </button>
+                                    <button id="view-chat-tickets-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-75">
+                                        Lihat Tiket Chat
                                     </button>
                                 </div>
                             ` : ''}
                             <div id="weapons-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-5xl mx-auto">
-                                </div>
+                                <!-- Senjata akan dimuat di sini -->
+                            </div>
                             <button id="back-to-landing-btn" class="mt-12 mx-auto block bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75">
                                 Kembali ke Beranda
                             </button>
@@ -339,6 +354,7 @@
                     document.getElementById('back-to-landing-btn').addEventListener('click', () => renderPage('landing'));
                     if (isAdmin) {
                         document.getElementById('add-new-weapon-btn').addEventListener('click', () => addWeaponModal.classList.remove('hidden'));
+                        document.getElementById('view-chat-tickets-btn').addEventListener('click', () => renderPage('admin-tickets'));
                     }
                     renderWeapons(); // Panggil fungsi untuk merender senjata setelah struktur halaman ada
                     break;
@@ -350,7 +366,8 @@
                             <p class="text-xl text-gray-300 mb-4 text-center">Transaksi untuk: <span class="font-bold text-yellow-300">${selectedWeapon ? selectedWeapon.name : 'N/A'}</span></p>
                             <div class="flex-grow bg-gray-800 p-6 rounded-lg shadow-xl border border-gray-700 flex flex-col overflow-hidden">
                                 <div id="chat-messages" class="flex-grow overflow-y-auto mb-4 p-2 custom-scrollbar">
-                                    </div>
+                                    <!-- Pesan chat akan dimuat di sini -->
+                                </div>
                                 <div class="flex mt-4">
                                     <input type="text" id="new-message-input" placeholder="Ketik pesan Anda..." class="flex-grow p-3 rounded-l-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                                     <button id="send-message-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-r-lg shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
@@ -373,12 +390,30 @@
                     document.getElementById('back-to-store-btn').addEventListener('click', () => {
                         renderPage('store');
                         activeChatTicketId = null;
+                        activeChatBuyerId = null; // Clear buyer ID
                         chatMessages = [];
                     });
                     if (isAdmin) {
                         document.getElementById('complete-transaction-btn').addEventListener('click', handleCompleteTransaction);
                     }
                     fetchChatMessages(); // Ambil pesan untuk chat aktif
+                    break;
+
+                case 'admin-tickets':
+                    pageContent = `
+                        <div class="min-h-screen bg-gradient-to-br from-gray-900 to-gray-700 text-white p-8">
+                            <h2 class="text-4xl font-extrabold mb-8 text-yellow-400 text-center">Tiket Chat Masuk (Admin)</h2>
+                            <div id="admin-tickets-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+                                <!-- Tiket chat akan dimuat di sini -->
+                            </div>
+                            <button id="back-to-store-from-tickets-btn" class="mt-12 mx-auto block bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75">
+                                Kembali ke Toko
+                            </button>
+                        </div>
+                    `;
+                    appContainer.innerHTML = pageContent;
+                    document.getElementById('back-to-store-from-tickets-btn').addEventListener('click', () => renderPage('store'));
+                    fetchAdminChatTickets(); // Fetch and render admin tickets
                     break;
             }
         }
@@ -509,15 +544,16 @@
         }
 
         function fetchChatMessages() {
-            if (!db || !activeChatTicketId || !userId) return;
+            if (!db || !activeChatTicketId || !activeChatBuyerId) return; // Ensure buyer ID is available for admin view
 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            const chatMessagesColRef = collection(db, `artifacts/${appId}/users/${userId}/transactions/${activeChatTicketId}/messages`);
-            const q = query(chatMessagesColRef, orderBy('timestamp'));
+            // Use activeChatBuyerId for fetching messages for admin view
+            const messagesColRef = collection(db, `artifacts/${appId}/users/${activeChatBuyerId}/transactions/${activeChatTicketId}/messages`);
+            const q = query(messagesColRef, orderBy('timestamp'));
 
             onSnapshot(q, (snapshot) => {
                 chatMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (document.getElementById('chat-messages')) { // Hanya render ulang jika di halaman chat
+                if (document.getElementById('chat-messages')) {
                     renderChatMessages();
                 }
             }, (error) => {
@@ -525,6 +561,61 @@
                 showInfoModal("Gagal memuat pesan chat. Silakan coba lagi.");
             });
         }
+
+        // New function to fetch all chat tickets for admin
+        function fetchAdminChatTickets() {
+            if (!db || !isAdmin) return;
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const publicTransactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
+            const q = query(publicTransactionsColRef, orderBy('createdAt', 'desc')); // Order by creation time
+
+            onSnapshot(q, (snapshot) => {
+                adminChatTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderAdminChatTickets(); // Render the tickets
+            }, (error) => {
+                console.error("Error fetching admin chat tickets:", error);
+                showInfoModal("Gagal memuat tiket chat admin. Silakan coba lagi.");
+            });
+        }
+
+        // New function to render admin chat tickets
+        function renderAdminChatTickets() {
+            const adminTicketsList = document.getElementById('admin-tickets-list');
+            if (!adminTicketsList) return;
+
+            adminTicketsList.innerHTML = ''; // Clear existing list
+
+            if (adminChatTickets.length === 0) {
+                adminTicketsList.innerHTML = '<p class="col-span-full text-center text-gray-400">Tidak ada tiket chat yang masuk.</p>';
+                return;
+            }
+
+            adminChatTickets.forEach(ticket => {
+                const ticketCard = document.createElement('div');
+                ticketCard.className = `bg-gray-800 p-6 rounded-lg shadow-xl border border-gray-700 flex flex-col cursor-pointer hover:bg-gray-700 transition duration-200 ${ticket.status === 'completed' ? 'opacity-70 border-green-500' : 'border-red-500'}`;
+                ticketCard.dataset.ticketId = ticket.id;
+                ticketCard.dataset.buyerId = ticket.buyerId; // Store buyer ID for chat navigation
+                ticketCard.innerHTML = `
+                    <h3 class="text-xl font-bold text-yellow-300 mb-2">Senjata: ${ticket.weaponName}</h3>
+                    <p class="text-gray-300 mb-1">Pembeli UID: ${ticket.buyerId}</p>
+                    <p class="text-gray-300 mb-1">Status: <span class="font-semibold ${ticket.status === 'completed' ? 'text-green-400' : 'text-red-400'}">${ticket.status.toUpperCase()}</span></p>
+                    <p class="text-sm text-gray-400 mt-2">Dibuat: ${new Date(ticket.createdAt).toLocaleString()}</p>
+                `;
+                adminTicketsList.appendChild(ticketCard);
+
+                ticketCard.addEventListener('click', (e) => {
+                    const clickedTicketId = e.currentTarget.dataset.ticketId;
+                    const clickedBuyerId = e.currentTarget.dataset.buyerId;
+                    // Set global variables for chat page
+                    activeChatTicketId = clickedTicketId;
+                    activeChatBuyerId = clickedBuyerId;
+                    selectedWeapon = weapons.find(w => w.id === ticket.weaponId); // Find weapon details if needed
+                    renderPage('chat'); // Navigate to chat page
+                });
+            });
+        }
+
 
         async function handleBuyWeapon(weapon) {
             if (!db || !userId) {
@@ -535,6 +626,7 @@
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 const userTransactionsColRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+                const publicTransactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`); // New public collection
 
                 const q = query(userTransactionsColRef);
                 const existingTicketsSnapshot = await getDocs(q);
@@ -548,8 +640,10 @@
 
                 if (existingTicket) {
                     activeChatTicketId = existingTicket.id;
+                    activeChatBuyerId = userId; // For current user's chat
                     showInfoModal(`Anda sudah memiliki tiket transaksi terbuka untuk ${weapon.name}. Melanjutkan chat yang sudah ada.`);
                 } else {
+                    // Create new ticket in private user collection
                     const newTicketRef = await addDoc(userTransactionsColRef, {
                         weaponId: weapon.id,
                         weaponName: weapon.name,
@@ -557,7 +651,19 @@
                         status: 'open',
                         createdAt: new Date().toISOString(),
                     });
+
+                    // Create a summary in the public transactions collection for admin view
+                    await setDoc(doc(publicTransactionsColRef, newTicketRef.id), {
+                        weaponId: weapon.id,
+                        weaponName: weapon.name,
+                        buyerId: userId,
+                        status: 'open',
+                        createdAt: new Date().toISOString(),
+                        lastMessageAt: new Date().toISOString(), // Track last message time for sorting
+                    });
+
                     activeChatTicketId = newTicketRef.id;
+                    activeChatBuyerId = userId; // For current user's chat
                     showInfoModal(`Tiket transaksi baru untuk ${weapon.name} telah dibuat. Silakan mulai chat.`);
                 }
 
@@ -573,14 +679,16 @@
             const newMessageInput = document.getElementById('new-message-input');
             const messageText = newMessageInput ? newMessageInput.value.trim() : '';
 
-            if (!db || !userId || !activeChatTicketId || messageText === '') {
+            if (!db || !userId || !activeChatTicketId || !activeChatBuyerId || messageText === '') { // Ensure buyer ID is available
                 showInfoModal("Pesan tidak boleh kosong atau chat belum siap.");
                 return;
             }
 
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const messagesColRef = collection(db, `artifacts/${appId}/users/${userId}/transactions/${activeChatTicketId}/messages`);
+                // Use activeChatBuyerId to send messages to the correct user's transaction
+                const messagesColRef = collection(db, `artifacts/${appId}/users/${activeChatBuyerId}/transactions/${activeChatTicketId}/messages`);
+                const publicTransactionDocRef = doc(db, `artifacts/${appId}/public/data/transactions`, activeChatTicketId);
 
                 await addDoc(messagesColRef, {
                     senderId: userId,
@@ -588,6 +696,12 @@
                     message: messageText,
                     timestamp: Date.now(),
                 });
+
+                // Update lastMessageAt in public transaction summary
+                await updateDoc(publicTransactionDocRef, {
+                    lastMessageAt: new Date().toISOString(),
+                });
+
                 if (newMessageInput) newMessageInput.value = ''; // Hapus input
             } catch (error) {
                 console.error("Error sending message:", error);
@@ -596,24 +710,33 @@
         }
 
         async function handleCompleteTransaction() {
-            if (!db || !userId || !activeChatTicketId || !isAdmin) {
+            if (!db || !userId || !activeChatTicketId || !activeChatBuyerId || !isAdmin) { // Ensure buyer ID is available
                 showInfoModal("Anda tidak memiliki izin untuk menyelesaikan transaksi ini.");
                 return;
             }
 
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, activeChatTicketId);
-
-                await updateDoc(transactionDocRef, {
+                // Update private user transaction
+                const userTransactionDocRef = doc(db, `artifacts/${appId}/users/${activeChatBuyerId}/transactions`, activeChatTicketId);
+                await updateDoc(userTransactionDocRef, {
                     status: 'completed',
                     completedAt: new Date().toISOString(),
                 });
 
+                // Update public transaction summary
+                const publicTransactionDocRef = doc(db, `artifacts/${appId}/public/data/transactions`, activeChatTicketId);
+                await updateDoc(publicTransactionDocRef, {
+                    status: 'completed',
+                    completedAt: new Date().toISOString(),
+                });
+
+
                 showInfoModal("Transaksi berhasil diselesaikan!");
                 activeChatTicketId = null;
+                activeChatBuyerId = null;
                 chatMessages = [];
-                renderPage('store');
+                renderPage('admin-tickets'); // Kembali ke halaman tiket admin
             } catch (error) {
                 console.error("Error completing transaction:", error);
                 showInfoModal("Gagal menyelesaikan transaksi. Silakan coba lagi.");
@@ -641,6 +764,21 @@
             }
         }
 
+        // Fungsi helper untuk memastikan dokumen perantara ada
+        async function ensureDocumentExists(path) {
+            const docRef = doc(db, path);
+            try {
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                    await setDoc(docRef, {}, { merge: true }); // Buat dokumen kosong jika tidak ada
+                    console.log(`Document path ${path} created.`);
+                }
+            } catch (error) {
+                console.error(`Error ensuring document path ${path} exists:`, error);
+                throw error; // Lempar ulang error agar bisa ditangani di handleAddWeapon
+            }
+        }
+
         async function handleAddWeapon() {
             if (!db || !isAdmin) {
                 showInfoModal("Anda tidak memiliki izin untuk menambahkan senjata.");
@@ -653,12 +791,15 @@
             const stock = parseInt(newWeaponStockInput.value);
 
             if (!name || isNaN(priceIC) || isNaN(stock) || priceIC < 0 || stock < 0) {
-                showInfoModal("Mohon isi semua field dengan benar (harga dan stok harus angka positif).");
+                showInfoModal("Mohon isi semua field dengan benar (nama, harga, dan stok harus angka positif).");
                 return;
             }
 
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                // Pastikan dokumen perantara 'artifacts/{appId}' ada
+                await ensureDocumentExists(`artifacts/${appId}`);
+                // Koleksi 'public', 'data', dan 'weapons' akan dibuat otomatis oleh addDoc jika belum ada
                 const weaponsColRef = collection(db, `artifacts/${appId}/public/data/weapons`);
 
                 await addDoc(weaponsColRef, {
@@ -666,7 +807,7 @@
                     description: description,
                     priceIC: priceIC,
                     stock: stock,
-                    createdAt: Date.now() // Tambahkan timestamp
+                    createdAt: Date.now()
                 });
 
                 showInfoModal("Senjata baru berhasil ditambahkan!");
@@ -679,7 +820,7 @@
                 renderPage('store'); // Render ulang halaman toko untuk melihat senjata baru
             } catch (error) {
                 console.error("Error adding new weapon:", error);
-                showInfoModal(`Gagal menambahkan senjata: ${error.message}. Pastikan koleksi 'weapons' sudah ada di Firestore.`);
+                showInfoModal(`Gagal menambahkan senjata: ${error.message}.`);
             }
         }
 
