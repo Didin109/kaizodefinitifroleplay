@@ -109,11 +109,13 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, query, orderBy, addDoc, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js"; // Import Firebase Storage
 
         // Variabel global untuk instance Firebase dan data pengguna
         let app;
         let db;
         let auth;
+        let storage; // New: Firebase Storage instance
         let userId = null;
         let isAdmin = false;
         let isGeneratingDescription = false; // Status untuk loading LLM
@@ -139,6 +141,7 @@
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
+                storage = getStorage(app); // Initialize Firebase Storage
 
                 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
@@ -199,6 +202,10 @@
         const newWeaponStockInput = document.getElementById('new-weapon-stock');
         const performAddWeaponBtn = document.getElementById('perform-add-weapon-btn');
         const closeAddWeaponModalBtn = document.getElementById('close-add-weapon-modal-btn');
+
+        // Elemen-elemen baru untuk kirim foto di chat
+        let imageUploadInput; // Dideklarasikan di luar agar bisa diakses di renderChat
+        let sendImageBtn; // Dideklarasikan di luar agar bisa diakses di renderChat
 
 
         modalOkButton.addEventListener('click', () => {
@@ -368,8 +375,12 @@
                                 <div id="chat-messages" class="flex-grow overflow-y-auto mb-4 p-2 custom-scrollbar">
                                     <!-- Pesan chat akan dimuat di sini -->
                                 </div>
-                                <div class="flex mt-4">
+                                <div class="flex mt-4 items-center">
                                     <input type="text" id="new-message-input" placeholder="Ketik pesan Anda..." class="flex-grow p-3 rounded-l-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                    <label for="image-upload-input" id="attach-image-btn" class="cursor-pointer bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-none transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75">
+                                        📷
+                                    </label>
+                                    <input type="file" id="image-upload-input" accept="image/*" class="hidden" />
                                     <button id="send-message-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-r-lg shadow-md transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
                                         Kirim
                                     </button>
@@ -386,7 +397,13 @@
                         </div>
                     `;
                     appContainer.innerHTML = pageContent;
-                    document.getElementById('send-message-btn').addEventListener('click', handleSendMessage);
+                    // Inisialisasi elemen-elemen chat setelah dirender
+                    imageUploadInput = document.getElementById('image-upload-input');
+                    sendImageBtn = document.getElementById('send-message-btn');
+
+                    sendImageBtn.addEventListener('click', handleSendMessage);
+                    imageUploadInput.addEventListener('change', handleImageSelection); // New event listener for image selection
+
                     document.getElementById('back-to-store-btn').addEventListener('click', () => {
                         renderPage('store');
                         activeChatTicketId = null;
@@ -501,9 +518,9 @@
 
         function renderChatMessages() {
             const chatMessagesContainer = document.getElementById('chat-messages');
-            if (!chatMessagesContainer) return; // Keluar jika kontainer chat tidak ditemukan
+            if (!chatMessagesContainer) return;
 
-            chatMessagesContainer.innerHTML = ''; // Hapus pesan yang ada
+            chatMessagesContainer.innerHTML = '';
 
             if (chatMessages.length === 0) {
                 chatMessagesContainer.innerHTML = '<p class="text-gray-400 text-center">Mulai chat untuk transaksi Anda.</p>';
@@ -513,16 +530,24 @@
             chatMessages.forEach(msg => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `mb-3 p-3 rounded-lg max-w-[70%] ${msg.senderId === userId ? 'bg-blue-700 ml-auto' : 'bg-gray-700 mr-auto'}`;
+                
+                let contentHtml = '';
+                if (msg.imageUrl) {
+                    contentHtml = `<img src="${msg.imageUrl}" alt="Gambar Chat" class="max-w-full h-auto rounded-md mb-2 object-contain" onerror="this.onerror=null;this.src='https://placehold.co/200x150/FF0000/FFFFFF?text=Error+Loading+Image';">`;
+                }
+                if (msg.message) {
+                    contentHtml += `<p class="text-lg">${msg.message}</p>`;
+                }
+
                 messageDiv.innerHTML = `
                     <p class="font-bold text-sm text-gray-300">${msg.senderName}</p>
-                    <p class="text-lg">${msg.message}</p>
+                    ${contentHtml}
                     <p class="text-xs text-right text-gray-400 mt-1">
                         ${new Date(msg.timestamp).toLocaleString()}
                     </p>
                 `;
                 chatMessagesContainer.appendChild(messageDiv);
             });
-            // Gulir ke bagian bawah chat
             chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
         }
 
@@ -534,7 +559,7 @@
 
             onSnapshot(q, (snapshot) => {
                 weapons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (document.getElementById('weapons-grid')) { // Hanya render ulang jika di halaman toko
+                if (document.getElementById('weapons-grid')) {
                     renderWeapons();
                 }
             }, (error) => {
@@ -544,10 +569,9 @@
         }
 
         function fetchChatMessages() {
-            if (!db || !activeChatTicketId || !activeChatBuyerId) return; // Ensure buyer ID is available for admin view
+            if (!db || !activeChatTicketId || !activeChatBuyerId) return;
 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            // Use activeChatBuyerId for fetching messages for admin view
             const messagesColRef = collection(db, `artifacts/${appId}/users/${activeChatBuyerId}/transactions/${activeChatTicketId}/messages`);
             const q = query(messagesColRef, orderBy('timestamp'));
 
@@ -562,29 +586,27 @@
             });
         }
 
-        // New function to fetch all chat tickets for admin
         function fetchAdminChatTickets() {
             if (!db || !isAdmin) return;
 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const publicTransactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
-            const q = query(publicTransactionsColRef, orderBy('createdAt', 'desc')); // Order by creation time
+            const q = query(publicTransactionsColRef, orderBy('createdAt', 'desc'));
 
             onSnapshot(q, (snapshot) => {
                 adminChatTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderAdminChatTickets(); // Render the tickets
+                renderAdminChatTickets();
             }, (error) => {
                 console.error("Error fetching admin chat tickets:", error);
                 showInfoModal("Gagal memuat tiket chat admin. Silakan coba lagi.");
             });
         }
 
-        // New function to render admin chat tickets
         function renderAdminChatTickets() {
             const adminTicketsList = document.getElementById('admin-tickets-list');
             if (!adminTicketsList) return;
 
-            adminTicketsList.innerHTML = ''; // Clear existing list
+            adminTicketsList.innerHTML = '';
 
             if (adminChatTickets.length === 0) {
                 adminTicketsList.innerHTML = '<p class="col-span-full text-center text-gray-400">Tidak ada tiket chat yang masuk.</p>';
@@ -595,7 +617,7 @@
                 const ticketCard = document.createElement('div');
                 ticketCard.className = `bg-gray-800 p-6 rounded-lg shadow-xl border border-gray-700 flex flex-col cursor-pointer hover:bg-gray-700 transition duration-200 ${ticket.status === 'completed' ? 'opacity-70 border-green-500' : 'border-red-500'}`;
                 ticketCard.dataset.ticketId = ticket.id;
-                ticketCard.dataset.buyerId = ticket.buyerId; // Store buyer ID for chat navigation
+                ticketCard.dataset.buyerId = ticket.buyerId;
                 ticketCard.innerHTML = `
                     <h3 class="text-xl font-bold text-yellow-300 mb-2">Senjata: ${ticket.weaponName}</h3>
                     <p class="text-gray-300 mb-1">Pembeli UID: ${ticket.buyerId}</p>
@@ -607,11 +629,10 @@
                 ticketCard.addEventListener('click', (e) => {
                     const clickedTicketId = e.currentTarget.dataset.ticketId;
                     const clickedBuyerId = e.currentTarget.dataset.buyerId;
-                    // Set global variables for chat page
                     activeChatTicketId = clickedTicketId;
                     activeChatBuyerId = clickedBuyerId;
-                    selectedWeapon = weapons.find(w => w.id === ticket.weaponId); // Find weapon details if needed
-                    renderPage('chat'); // Navigate to chat page
+                    selectedWeapon = weapons.find(w => w.id === ticket.weaponId);
+                    renderPage('chat');
                 });
             });
         }
@@ -626,7 +647,7 @@
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 const userTransactionsColRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
-                const publicTransactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`); // New public collection
+                const publicTransactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
 
                 const q = query(userTransactionsColRef);
                 const existingTicketsSnapshot = await getDocs(q);
@@ -640,10 +661,9 @@
 
                 if (existingTicket) {
                     activeChatTicketId = existingTicket.id;
-                    activeChatBuyerId = userId; // For current user's chat
+                    activeChatBuyerId = userId;
                     showInfoModal(`Anda sudah memiliki tiket transaksi terbuka untuk ${weapon.name}. Melanjutkan chat yang sudah ada.`);
                 } else {
-                    // Create new ticket in private user collection
                     const newTicketRef = await addDoc(userTransactionsColRef, {
                         weaponId: weapon.id,
                         weaponName: weapon.name,
@@ -652,18 +672,17 @@
                         createdAt: new Date().toISOString(),
                     });
 
-                    // Create a summary in the public transactions collection for admin view
                     await setDoc(doc(publicTransactionsColRef, newTicketRef.id), {
                         weaponId: weapon.id,
                         weaponName: weapon.name,
                         buyerId: userId,
                         status: 'open',
                         createdAt: new Date().toISOString(),
-                        lastMessageAt: new Date().toISOString(), // Track last message time for sorting
+                        lastMessageAt: new Date().toISOString(),
                     });
 
                     activeChatTicketId = newTicketRef.id;
-                    activeChatBuyerId = userId; // For current user's chat
+                    activeChatBuyerId = userId;
                     showInfoModal(`Tiket transaksi baru untuk ${weapon.name} telah dibuat. Silakan mulai chat.`);
                 }
 
@@ -675,56 +694,116 @@
             }
         }
 
-        async function handleSendMessage() {
-            const newMessageInput = document.getElementById('new-message-input');
-            const messageText = newMessageInput ? newMessageInput.value.trim() : '';
+        // New function to handle image upload
+        async function uploadImageToStorage(file) {
+            if (!storage || !activeChatTicketId || !activeChatBuyerId) {
+                throw new Error("Firebase Storage atau detail chat belum siap.");
+            }
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const fileName = `${Date.now()}_${file.name}`;
+            // Path di Firebase Storage: images/transactions/{appId}/{buyerId}/{ticketId}/{fileName}
+            const storageRef = ref(storage, `images/transactions/${appId}/${activeChatBuyerId}/${activeChatTicketId}/${fileName}`);
 
-            if (!db || !userId || !activeChatTicketId || !activeChatBuyerId || messageText === '') { // Ensure buyer ID is available
+            try {
+                const snapshot = await uploadBytes(storageRef, file);
+                const downloadURL = await getDownloadURL(snapshot.ref);
+                return downloadURL;
+            } catch (error) {
+                console.error("Error uploading image:", error);
+                throw new Error(`Gagal mengunggah gambar: ${error.message}`);
+            }
+        }
+
+        // New event listener for image input change
+        async function handleImageSelection() {
+            if (imageUploadInput.files.length > 0) {
+                const file = imageUploadInput.files[0];
+                showInfoModal("Mengunggah gambar... Mohon tunggu.");
+                try {
+                    const imageUrl = await uploadImageToStorage(file);
+                    // Send message with image URL
+                    await sendChatMessage('', imageUrl); // Send empty message text, only image
+                    showInfoModal("Gambar berhasil dikirim!");
+                    imageUploadInput.value = ''; // Clear the input
+                } catch (error) {
+                    showInfoModal(error.message);
+                }
+            }
+        }
+
+        // Modified sendChatMessage to accept imageUrl
+        async function sendChatMessage(messageText, imageUrl = null) {
+            if (!db || !userId || !activeChatTicketId || !activeChatBuyerId || (!messageText && !imageUrl)) {
                 showInfoModal("Pesan tidak boleh kosong atau chat belum siap.");
                 return;
             }
 
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                // Use activeChatBuyerId to send messages to the correct user's transaction
                 const messagesColRef = collection(db, `artifacts/${appId}/users/${activeChatBuyerId}/transactions/${activeChatTicketId}/messages`);
                 const publicTransactionDocRef = doc(db, `artifacts/${appId}/public/data/transactions`, activeChatTicketId);
 
-                await addDoc(messagesColRef, {
+                const messageData = {
                     senderId: userId,
                     senderName: userId === ADMIN_UID ? 'Admin' : 'Pembeli',
                     message: messageText,
                     timestamp: Date.now(),
-                });
+                };
+                if (imageUrl) {
+                    messageData.imageUrl = imageUrl;
+                }
 
-                // Update lastMessageAt in public transaction summary
+                await addDoc(messagesColRef, messageData);
+
                 await updateDoc(publicTransactionDocRef, {
                     lastMessageAt: new Date().toISOString(),
                 });
 
-                if (newMessageInput) newMessageInput.value = ''; // Hapus input
+                const newMessageInput = document.getElementById('new-message-input');
+                if (newMessageInput) newMessageInput.value = '';
             } catch (error) {
                 console.error("Error sending message:", error);
-                showInfoModal("Gagal mengirim pesan. Silakan coba lagi.");
+                showInfoModal(`Gagal mengirim pesan: ${error.message}`);
             }
         }
 
+        // Original handleSendMessage now calls the new sendChatMessage
+        async function handleSendMessage() {
+            const newMessageInput = document.getElementById('new-message-input');
+            const messageText = newMessageInput ? newMessageInput.value.trim() : '';
+
+            // If there's an image selected, handle it via image selection event listener
+            if (imageUploadInput && imageUploadInput.files.length > 0) {
+                // The handleImageSelection will be triggered by 'change' event on the input.
+                // If user clicks send button after selecting an image, we still want to process the image.
+                // However, the current flow is: select image -> auto-send.
+                // If user types text AND selects image, they are separate actions.
+                // For simplicity, if text is present, send text. If image is present, send image.
+                // If both, user needs to send text then image, or vice versa.
+                // Let's prioritize image if selected.
+                handleImageSelection(); // This will upload and send the image
+            } else if (messageText) {
+                await sendChatMessage(messageText);
+            } else {
+                showInfoModal("Pesan tidak boleh kosong.");
+            }
+        }
+
+
         async function handleCompleteTransaction() {
-            if (!db || !userId || !activeChatTicketId || !activeChatBuyerId || !isAdmin) { // Ensure buyer ID is available
+            if (!db || !userId || !activeChatTicketId || !activeChatBuyerId || !isAdmin) {
                 showInfoModal("Anda tidak memiliki izin untuk menyelesaikan transaksi ini.");
                 return;
             }
 
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                // Update private user transaction
                 const userTransactionDocRef = doc(db, `artifacts/${appId}/users/${activeChatBuyerId}/transactions`, activeChatTicketId);
                 await updateDoc(userTransactionDocRef, {
                     status: 'completed',
                     completedAt: new Date().toISOString(),
                 });
 
-                // Update public transaction summary
                 const publicTransactionDocRef = doc(db, `artifacts/${appId}/public/data/transactions`, activeChatTicketId);
                 await updateDoc(publicTransactionDocRef, {
                     status: 'completed',
@@ -736,7 +815,7 @@
                 activeChatTicketId = null;
                 activeChatBuyerId = null;
                 chatMessages = [];
-                renderPage('admin-tickets'); // Kembali ke halaman tiket admin
+                renderPage('admin-tickets');
             } catch (error) {
                 console.error("Error completing transaction:", error);
                 showInfoModal("Gagal menyelesaikan transaksi. Silakan coba lagi.");
@@ -764,18 +843,17 @@
             }
         }
 
-        // Fungsi helper untuk memastikan dokumen perantara ada
         async function ensureDocumentExists(path) {
             const docRef = doc(db, path);
             try {
                 const docSnap = await getDoc(docRef);
                 if (!docSnap.exists()) {
-                    await setDoc(docRef, {}, { merge: true }); // Buat dokumen kosong jika tidak ada
+                    await setDoc(docRef, {}, { merge: true });
                     console.log(`Document path ${path} created.`);
                 }
             } catch (error) {
                 console.error(`Error ensuring document path ${path} exists:`, error);
-                throw error; // Lempar ulang error agar bisa ditangani di handleAddWeapon
+                throw error;
             }
         }
 
@@ -797,9 +875,7 @@
 
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                // Pastikan dokumen perantara 'artifacts/{appId}' ada
                 await ensureDocumentExists(`artifacts/${appId}`);
-                // Koleksi 'public', 'data', dan 'weapons' akan dibuat otomatis oleh addDoc jika belum ada
                 const weaponsColRef = collection(db, `artifacts/${appId}/public/data/weapons`);
 
                 await addDoc(weaponsColRef, {
@@ -811,13 +887,12 @@
                 });
 
                 showInfoModal("Senjata baru berhasil ditambahkan!");
-                addWeaponModal.classList.add('hidden'); // Sembunyikan modal
-                // Bersihkan form
+                addWeaponModal.classList.add('hidden');
                 newWeaponNameInput.value = '';
                 newWeaponDescriptionInput.value = '';
                 newWeaponPriceInput.value = '';
                 newWeaponStockInput.value = '';
-                renderPage('store'); // Render ulang halaman toko untuk melihat senjata baru
+                renderPage('store');
             } catch (error) {
                 console.error("Error adding new weapon:", error);
                 showInfoModal(`Gagal menambahkan senjata: ${error.message}.`);
@@ -842,7 +917,7 @@
                 chatHistory.push({ role: "user", parts: [{ text: prompt }] });
 
                 const payload = { contents: chatHistory };
-                const apiKey = ""; // Canvas akan menyediakan ini
+                const apiKey = "";
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
                 const response = await fetch(apiUrl, {
@@ -881,7 +956,6 @@
         performAddWeaponBtn.addEventListener('click', handleAddWeapon);
         closeAddWeaponModalBtn.addEventListener('click', () => {
             addWeaponModal.classList.add('hidden');
-            // Bersihkan form
             newWeaponNameInput.value = '';
             newWeaponDescriptionInput.value = '';
             newWeaponPriceInput.value = '';
